@@ -12,5 +12,7 @@
 *.out
 
 .idea/
+.vscode/
 images/*
 !*.keep
+__debug_bin
