@@ -17,4 +17,4 @@ images/*
 !*.keep
 __debug_bin
 
-./outputs/*
+outputs/*
