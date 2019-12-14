@@ -1,5 +1,5 @@
 # go-tile
-Convert image to tile
+Converting image to *tile*
 ## Usage
 ### Steps
 1. Clone this repository
@@ -24,4 +24,4 @@ go run main.go -i ~/Pictures/sample.png
 Original(`sample.png`)  
 ![sample.png](.github/sample.jpg)  
 Result(`16tile_sample.png`)  
-![16tile_sample.png](.github/16tiled_sample.png)
+![16tile_sample.png](.github/16tile_sample.png)
