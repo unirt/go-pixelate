@@ -10,4 +10,10 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
 .idea/
+.vscode/
+!*.keep
+__debug_bin
+
+outputs/*
