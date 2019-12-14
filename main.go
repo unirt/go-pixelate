@@ -43,6 +43,10 @@ func main() {
 	newImage := createNewImage(colors, side, width, height, rect)
 
 	name := getNewImageName(originalFile.Name(), side)
+	if _, err := os.Stat("./outputs"); os.IsNotExist(err) {
+		os.Mkdir("./outputs", os.ModePerm)
+		os.Chmod("./outputs", 0777)
+	}
 	f, err := os.Create("./outputs/" + name)
 	if err != nil {
 		fmt.Println(err)
