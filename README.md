@@ -1,5 +1,6 @@
 # go-tile
-Converting image to *tile*
+**Simple image pixelater**  
+You can easily convert an image to *tile*.
 ## Usage
 ### Steps
 1. Clone this repository
