@@ -13,21 +13,22 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func main() {
-	inputImagePath, side, err := getFlags()
+	inputImagePath, sideBlocks, err := getFlags()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
 	originalFile, err := os.Open(inputImagePath)
-	defer originalFile.Close()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	defer originalFile.Close()
 
 	originalImage, _, err := image.Decode(originalFile)
 	if err != nil {
@@ -35,16 +36,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	originalRect := originalImage.Bounds()
-	width, height, rect := getNewRect(originalRect, side)
+	newImage := createNewImage(originalImage, sideBlocks)
 
-	colors := getColors(originalImage, width, height, side)
-
-	newImage := createNewImage(colors, side, width, height, rect)
-
-	name := getNewImageName(originalFile.Name(), side)
+	name := getNewImageName(originalFile.Name(), sideBlocks)
 	if _, err := os.Stat("./outputs"); os.IsNotExist(err) {
-		os.Mkdir("./outputs", os.ModePerm)
+		err := os.Mkdir("./outputs", os.ModePerm)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 		os.Chmod("./outputs", 0777)
 	}
 	f, err := os.Create("./outputs/" + name)
@@ -52,10 +52,14 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	png.Encode(f, newImage)
+	err = png.Encode(f, newImage)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
-	fmt.Println("Tiled!")
-	fmt.Println("Here is tiled image: " + f.Name())
+	fmt.Println("Pixelated!")
+	fmt.Println("Here is pixelated image: " + f.Name())
 }
 
 func getFlags() (inputPath string, sideNum int, err error) {
@@ -70,60 +74,76 @@ func getFlags() (inputPath string, sideNum int, err error) {
 	return *inputImagePath, *side, nil
 }
 
-func getNewRect(originalRect image.Rectangle, side int) (width int, height int, rect image.Rectangle) {
-	width = (originalRect.Dx() / side) * side
-	height = (originalRect.Dy() / side) * side
+func getNewRect(originalRect image.Rectangle, sideBlocks int) (width int, height int, rect image.Rectangle) {
+	width = (originalRect.Dx() / sideBlocks) * sideBlocks
+	height = (originalRect.Dy() / sideBlocks) * sideBlocks
 
-	upLeft := image.Point{0, 0}
-	lowRight := image.Point{width, height}
-	rect = image.Rectangle{upLeft, lowRight}
+	upLeft := image.Point{}
+	lowRight := image.Point{X: width, Y: height}
+	rect = image.Rectangle{Min: upLeft, Max: lowRight}
 	return
 }
 
-func getColors(originalImage image.Image, width int, height int, side int) (colors []color.RGBA) {
-	const NumToDiv = 257
-
-	for sec := 0; sec < side*side; sec++ {
-		secWidth := (width / side) * (sec/side + 1)
-		secHeight := (height / side) * (sec%side + 1)
-		var sumR, sumG, sumB, sumA uint32
-		for x := 0; x < secWidth; x++ {
-			for y := 0; y < secHeight; y++ {
-				r, g, b, a := originalImage.At(x, y).RGBA()
-				sumR += r / NumToDiv
-				sumG += g / NumToDiv
-				sumB += b / NumToDiv
-				sumA += a / NumToDiv
-			}
-		}
-		numOfElem := uint32(secWidth * secHeight)
-		aveR := sumR / numOfElem
-		aveG := sumG / numOfElem
-		aveB := sumB / numOfElem
-		aveA := sumA / numOfElem
-
-		colors = append(colors, color.RGBA{uint8(aveR), uint8(aveG), uint8(aveB), uint8(aveA)})
-	}
-	return
+type SectionInfo struct {
+	sectionNumber int
+	startWidth    int
+	endWidth      int
+	startHeight   int
+	endHeight     int
 }
 
-func createNewImage(colors []color.RGBA, side int, width int, height int, rect image.Rectangle) (newImage *image.RGBA) {
-	newImage = image.NewRGBA(rect)
+func createNewImage(originalImage image.Image, sideBlocks int) *image.RGBA {
+	width, height, rect := getNewRect(originalImage.Bounds(), sideBlocks)
+	newImage := image.NewRGBA(rect)
+	var wg sync.WaitGroup
 
-	for sec := 0; sec < side*side; sec++ {
-		secStartWidth := (width / side) * (sec / side)
-		secEndWidth := (width / side) * (sec/side + 1)
-		secStartHeight := (height / side) * (sec % side)
-		secEndHeight := (height / side) * (sec%side + 1)
+	for section := 0; section < sideBlocks*sideBlocks; section++ {
+		sectionInfo := SectionInfo{
+			sectionNumber: section,
+			startWidth:    (width / sideBlocks) * (section / sideBlocks),
+			endWidth:      (width / sideBlocks) * (section/sideBlocks + 1),
+			startHeight:   (height / sideBlocks) * (section % sideBlocks),
+			endHeight:     (height / sideBlocks) * (section%sideBlocks + 1),
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			createBlock(originalImage, newImage, sectionInfo)
+		}()
+	}
+	wg.Wait()
 
-		col := colors[sec]
-		for x := secStartWidth; x < secEndWidth; x++ {
-			for y := secStartHeight; y < secEndHeight; y++ {
-				newImage.Set(x, y, col)
-			}
+	return newImage
+}
+
+func get8bitColor(c uint32) uint32 {
+	return c / 257
+}
+
+func createBlock(originalImage image.Image, newImage *image.RGBA, sectionInfo SectionInfo) *image.RGBA {
+	var sumR, sumG, sumB, sumA, cnt uint32
+	for x := sectionInfo.startWidth; x < sectionInfo.endWidth; x++ {
+		for y := sectionInfo.startHeight; y < sectionInfo.endHeight; y++ {
+			r, g, b, a := originalImage.At(x, y).RGBA()
+			sumR += get8bitColor(r)
+			sumG += get8bitColor(g)
+			sumB += get8bitColor(b)
+			sumA += get8bitColor(a)
+			cnt++
 		}
 	}
-	return
+	aveR := uint8(sumR / cnt)
+	aveG := uint8(sumG / cnt)
+	aveB := uint8(sumB / cnt)
+	aveA := uint8(sumA / cnt)
+
+	for x := sectionInfo.startWidth; x < sectionInfo.endWidth; x++ {
+		for y := sectionInfo.startHeight; y < sectionInfo.endHeight; y++ {
+			newImage.Set(x, y, color.RGBA{R: aveR, G: aveG, B: aveB, A: aveA})
+		}
+	}
+
+	return newImage
 }
 
 func getNewImageName(originalName string, side int) string {
@@ -131,5 +151,5 @@ func getNewImageName(originalName string, side int) string {
 	name := nameS[len(nameS)-1]
 	ext := path.Ext(name)
 
-	return strconv.Itoa(side*side) + "tile_" + name[0:len(name)-len(ext)] + ".png"
+	return strconv.Itoa(side*side) + "blocks_" + name[0:len(name)-len(ext)] + ".png"
 }
