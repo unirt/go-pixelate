@@ -6,7 +6,7 @@
    Recommended version: **v0.3**
 2. Pixelate image
    ```bash
-   ./go-tile -i path/to/image -n 4
+   ./go-pixelate -i path/to/image -n 4
    # converted image path will be `./outputs/16blocks_{originalImagePath}.png`
    ```
 #### if you want to `go run`
